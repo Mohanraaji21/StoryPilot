@@ -31,7 +31,7 @@ Your list already has Vertex AI (`aiplatform`), Firestore, Cloud Run, Cloud Buil
 ## 5. Create Atlassian credentials
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens and click Create API token.
 2. Name it `storypilot`, set a short expiry, and copy the token immediately.
-3. Your base URL is `https://YOUR-SITE.atlassian.net`. The same token covers Jira and Confluence.
+3. Record both product base URLs. They may be different Atlassian Cloud hosts: Jira might use `https://YOUR-JIRA-SITE.atlassian.net`, while Confluence might use `https://YOUR-CONFLUENCE-SITE.atlassian.net`.
 4. The token inherits your account's access. Prefer a dedicated read-only service account that can see only the projects and spaces you want analysed.
 5. Jira stories should contain a heading line `Acceptance Criteria` followed by one criterion per line or bullet. Without it, StoryPilot warns and shows no criteria.
 
@@ -50,7 +50,7 @@ cd storypilot\backend
 copy .env.example .env
 notepad .env
 ```
-Fill in `GEMINI_MODEL`, `GOOGLE_CLOUD_LOCATION` and the three `ATLASSIAN_*` values. `.env` is git-ignored. Never commit it.
+Fill in `GEMINI_MODEL`, `GOOGLE_CLOUD_LOCATION`, `ATLASSIAN_JIRA_BASE_URL`, `ATLASSIAN_CONFLUENCE_BASE_URL`, `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN`. Use the separate Jira and Confluence hosts shown in each product's address bar. The same unscoped API token can be used for both products if the account has access to both. Existing setups using only `ATLASSIAN_BASE_URL` remain supported for sites that share one host. `.env` is git-ignored. Never commit it.
 
 ## 8. Run locally
 Terminal 1 (API):
@@ -82,7 +82,7 @@ Open http://localhost:5173.
 3. From the `storypilot` folder (where the Dockerfile is):
 ```powershell
 gcloud run deploy storypilot --source . --region asia-south1 `
-  --set-env-vars GOOGLE_CLOUD_PROJECT=storypilot-511912,GOOGLE_CLOUD_LOCATION=global,GEMINI_MODEL=YOUR-MODEL-ID,ATLASSIAN_BASE_URL=https://YOUR-SITE.atlassian.net,ATLASSIAN_EMAIL=you@example.com `
+  --set-env-vars GOOGLE_CLOUD_PROJECT=storypilot-511912,GOOGLE_CLOUD_LOCATION=global,GEMINI_MODEL=YOUR-MODEL-ID,ATLASSIAN_JIRA_BASE_URL=https://YOUR-JIRA-SITE.atlassian.net,ATLASSIAN_CONFLUENCE_BASE_URL=https://YOUR-CONFLUENCE-SITE.atlassian.net,ATLASSIAN_EMAIL=you@example.com `
   --set-secrets ATLASSIAN_API_TOKEN=atlassian-api-token:latest
 ```
 4. Cloud Run prints the service URL. Keep the service private (no `--allow-unauthenticated`) when it holds real Jira data, and open it with `gcloud run services proxy storypilot --region asia-south1`. Allow public access only for a demo with synthetic data.
@@ -95,7 +95,7 @@ gcloud run deploy storypilot --source . --region asia-south1 `
 | Analyze returns "Analysis failed" | Wrong model ID or region, missing Vertex AI User role, or billing off |
 | Import: HTTP 401 | Wrong email or token, or base URL typo |
 | Import: HTTP 403 | The Atlassian account lacks permission. Grant it access to the Jira project/issue or Confluence space. |
-| Import: Jira HTTP 404 | Confirm the issue key exists on the configured Jira site (`ATLASSIAN_BASE_URL`) and the configured account can browse the project and issue. Jira deliberately uses 404 for both missing and inaccessible issues. The API error message is included when Atlassian provides one. |
-| Confluence search skipped warning | Token lacks Confluence access, or no matching pages |
+| Import: Jira HTTP 404 | Confirm the issue key exists on the configured Jira site (`ATLASSIAN_JIRA_BASE_URL`) and the configured account can browse the project and issue. Jira deliberately uses 404 for both missing and inaccessible issues. The API error message is included when Atlassian provides one. |
+| Confluence search skipped warning | Confirm `ATLASSIAN_CONFLUENCE_BASE_URL` matches the Confluence host and the account/token can access Confluence. If authentication succeeds but no pages appear, check page visibility and whether page text matches the Jira story keywords. |
 | Store shows local-json | Firestore not created, or ADC login missing. See the console message printed at startup |
 | Cloud Run 403 on the URL | The service is private. Use the proxy command above |

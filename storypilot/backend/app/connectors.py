@@ -2,12 +2,23 @@
 import base64, json, os, re, urllib.error, urllib.parse, urllib.request
 from html import unescape
 class ConnectorError(Exception): pass
-def cfg(): return {k: os.environ.get(v, "").strip() for k, v in (("base", "ATLASSIAN_BASE_URL"), ("email", "ATLASSIAN_EMAIL"), ("token", "ATLASSIAN_API_TOKEN"))}
-def configured(): return all(cfg().values())
-def _get(path, params=None):
+def cfg():
+    legacy_base = os.environ.get("ATLASSIAN_BASE_URL", "").strip()
+    return {
+        "jira_base": os.environ.get("ATLASSIAN_JIRA_BASE_URL", "").strip() or legacy_base,
+        "confluence_base": os.environ.get("ATLASSIAN_CONFLUENCE_BASE_URL", "").strip() or legacy_base,
+        "email": os.environ.get("ATLASSIAN_EMAIL", "").strip(),
+        "token": os.environ.get("ATLASSIAN_API_TOKEN", "").strip(),
+    }
+def configured():
     c = cfg()
-    if not all(c.values()): raise ConnectorError("Atlassian is not configured. Set ATLASSIAN_BASE_URL, ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN.")
-    url = c["base"].rstrip("/") + path + ("?" + urllib.parse.urlencode(params) if params else "")
+    return all((c["jira_base"], c["email"], c["token"]))
+def _get(path, params=None, product="jira"):
+    c = cfg()
+    base = c.get(f"{product}_base", "")
+    if not all((base, c["email"], c["token"])):
+        raise ConnectorError("Atlassian is not configured. Set ATLASSIAN_JIRA_BASE_URL, ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN; set ATLASSIAN_CONFLUENCE_BASE_URL to enable Confluence search.")
+    url = base.rstrip("/") + path + ("?" + urllib.parse.urlencode(params) if params else "")
     auth = base64.b64encode(f"{c['email']}:{c['token']}".encode()).decode()
     try:
         with urllib.request.urlopen(urllib.request.Request(url, headers={"Authorization": "Basic " + auth, "Accept": "application/json"}), timeout=20) as r: return json.load(r)
@@ -15,7 +26,7 @@ def _get(path, params=None):
         hint = {
             401: "check the Atlassian email and API token",
             403: "this account lacks permission",
-            404: "confirm the issue exists on this Jira site and this account can browse its project and issue",
+            404: "confirm the requested resource exists on this site and this account can access it",
         }.get(e.code, "")
         provider_message = ""
         try:
@@ -65,7 +76,7 @@ def top_chunks(docs, query, k=8):
 def confluence_chunks(text, key, pages=5):
     uniq = list(dict.fromkeys(w.lower() for w in re.findall(r"[A-Za-z0-9]{4,}", text)))[:6]
     terms = " OR ".join(f'text ~ "{w}"' for w in uniq + [key])
-    data = _get("/wiki/rest/api/content/search", {"cql": f"type=page AND ({terms})", "limit": pages, "expand": "body.storage,version"})
+    data = _get("/wiki/rest/api/content/search", {"cql": f"type=page AND ({terms})", "limit": pages, "expand": "body.storage,version"}, product="confluence")
     out = {}
     for p in data.get("results", []):
         plain = html_text(p["body"]["storage"]["value"]); v = p.get("version", {})
